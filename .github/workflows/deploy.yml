@@ -75,3 +75,13 @@ jobs:
             openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put TOKEN_PEPPER >/dev/null
             echo "TOKEN_PEPPER créé."
           fi
+      - name: Contrôle après déploiement (lecture seule, rien d'identifiant)
+        if: steps.gate.outputs.go == 'true'
+        continue-on-error: true
+        working-directory: worker
+        run: |
+          # Two cron events (~2 min) to measure real CPU time. Outside the
+          # session the tick returns at once, so this measures the fast path.
+          timeout 130 npx wrangler tail pile --format json > "$RUNNER_TEMP/tail.json" 2>/dev/null || true
+          node ../scripts/ci_status.mjs d1 | tee -a "$GITHUB_STEP_SUMMARY"
+          node ../scripts/ci_status.mjs tail "$RUNNER_TEMP/tail.json" | tee -a "$GITHUB_STEP_SUMMARY"

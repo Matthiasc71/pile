@@ -27,14 +27,9 @@ function toBar(symbol: string, b: AlpacaBar): Bar {
 }
 
 /** Where to resume: one minute after the last stored bar, never before sessionStart or more than 30 min back. */
-export async function resumeFrom(db: D1Database, symbols: readonly string[], now: number, sessionStart: number): Promise<number> {
-  const placeholders = symbols.map(() => "?").join(",");
-  const row = await db
-    .prepare("SELECT MIN(last_ts) AS ts FROM (SELECT MAX(ts) AS last_ts FROM bars_1m WHERE symbol IN (" + placeholders + ") AND ts >= ? GROUP BY symbol)")
-    .bind(...symbols, sessionStart)
-    .first<{ ts: number | null }>();
+export function resumeStart(lastTs: number | null, now: number, sessionStart: number): number {
   const floor = Math.max(sessionStart, now - LOOKBACK_MS);
-  return row?.ts ? Math.max(row.ts + 60_000, floor) : floor;
+  return lastTs !== null ? Math.max(lastTs + 60_000, floor) : floor;
 }
 
 export async function fetchBars(fetcher: Fetcher, keys: AlpacaKeys, symbols: readonly string[], start: number): Promise<Bar[]> {
@@ -67,11 +62,10 @@ export function saveBars(db: D1Database, bars: readonly Bar[]): D1PreparedStatem
   return bars.map((b) => stmt.bind(b.symbol, b.ts, b.o, b.h, b.l, b.c, b.v, b.n, b.vw));
 }
 
-/** Latest close per symbol: from the new bars, else from storage. */
-export async function latestClose(db: D1Database, symbol: string, fresh: readonly Bar[]): Promise<{ price: number; ts: number } | null> {
+/** Latest close of a symbol: from the new bars, else the last stored one. */
+export function latestClose(symbol: string, fresh: readonly Bar[], stored: { price: number; ts: number } | null): { price: number; ts: number } | null {
   let best: Bar | null = null;
   for (const b of fresh) if (b.symbol === symbol && (!best || b.ts > best.ts)) best = b;
-  if (best) return { price: best.c, ts: best.ts };
-  const row = await db.prepare("SELECT c, ts FROM bars_1m WHERE symbol = ? ORDER BY ts DESC LIMIT 1").bind(symbol).first<{ c: number; ts: number }>();
-  return row ? { price: row.c, ts: row.ts } : null;
+  if (best && (!stored || best.ts >= stored.ts)) return { price: best.c, ts: best.ts };
+  return stored;
 }

@@ -9,7 +9,7 @@
  */
 import type { FetchFn } from "./env";
 import { parseFxSeries } from "./schemas";
-import { kvGet, kvPut } from "./store";
+import { kvPut } from "./store";
 import { addDays } from "./time";
 
 export const FRANKFURTER = "https://api.frankfurter.dev/v1/";
@@ -60,10 +60,15 @@ export function rateFor(rates: readonly FxRate[], date: string): number | null {
  * One subrequest, open-ended range so a gap (weekend, outage) fills itself.
  * Returns statements to batch, or [] when nothing to do.
  */
-export async function refreshRates(db: D1Database, fetchFn: FetchFn, today: string, now: number): Promise<{ statements: D1PreparedStatement[]; fetched: boolean; rates: FxRate[] }> {
-  const latest = await latestRate(db);
+export async function refreshRates(
+  db: D1Database,
+  fetchFn: FetchFn,
+  today: string,
+  now: number,
+  latest: FxRate | null,
+  lastTry: number | null,
+): Promise<{ statements: D1PreparedStatement[]; fetched: boolean; rates: FxRate[] }> {
   if (latest && latest.date >= today) return { statements: [], fetched: false, rates: [] };
-  const lastTry = await kvGet<number>(db, "fx_last_try");
   if (lastTry !== null && now - lastTry < RETRY_MS) return { statements: [], fetched: false, rates: [] };
 
   const statements: D1PreparedStatement[] = [kvPut(db, "fx_last_try", now, now)];

@@ -24,8 +24,7 @@ export function clockNeedsRefresh(c: CachedClock | null, now: number): boolean {
 }
 
 /** The clock, from cache or from Alpaca. Returns the statement to persist a refresh (batched by the caller). */
-export async function getClock(db: D1Database, fetcher: Fetcher, keys: AlpacaKeys, now: number): Promise<{ clock: CachedClock; save: D1PreparedStatement | null }> {
-  const cached = await kvGet<CachedClock>(db, KEY);
+export async function getClock(db: D1Database, fetcher: Fetcher, keys: AlpacaKeys, now: number, cached: CachedClock | null): Promise<{ clock: CachedClock; save: D1PreparedStatement | null }> {
   if (cached && !clockNeedsRefresh(cached, now)) return { clock: cached, save: null };
   const raw = parseClock(await trading(fetcher, keys, "GET", "/v2/clock"));
   const clock: CachedClock = {

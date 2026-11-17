@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pile",
   "main": "src/index.ts",
+  // Smaller script, less to parse on a cold start (the cron has 10 ms of CPU).
+  "minify": true,
   "compatibility_date": "2026-11-01",
   // One cron for Pile (the account allows 5 on the free plan; Isoligne uses 1).
   // Outside 9:25-16:10 New York it returns without any I/O.

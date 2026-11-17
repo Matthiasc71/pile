@@ -9,13 +9,13 @@
  * All writes go to D1 in one batch at the end.
  */
 import { AlpacaError, PaperLockError, trading, type AlpacaKeys, type Fetcher } from "./alpaca";
-import { getClock } from "./clock";
+import { getClock, type CachedClock } from "./clock";
 import type { Deps, Env } from "./env";
-import { latestRate, refreshRates, type FxRate } from "./fx";
+import { refreshRates, type FxRate } from "./fx";
 import { checkAccount } from "./guard";
-import { fetchBars, latestClose, resumeFrom, saveBars } from "./market";
+import { fetchBars, latestClose, resumeStart, saveBars } from "./market";
 import { parsePositions } from "./schemas";
-import { alert, configGet, configPut, kvGet, kvPut } from "./store";
+import { alert, configPut, kvPut } from "./store";
 import { NY, inWatchWindow, minuteOf, zoned, zonedToUtc } from "./time";
 
 export const BASE_EUR = 50;
@@ -63,6 +63,38 @@ interface Health {
   readonly code?: string;
 }
 
+/** Everything a minute reads from D1, in one round trip. */
+interface Preload {
+  readonly clock: CachedClock | null;
+  readonly fxLastTry: number | null;
+  readonly compacted: string | null;
+  readonly day0: Day0 | null;
+  readonly latestRate: FxRate | null;
+  readonly lastSpy: { price: number; ts: number } | null;
+}
+
+async function preload(db: D1Database, sessionStart: number): Promise<Preload> {
+  const [kv, cfg, fx, bar] = await db.batch([
+    db.prepare("SELECT key, value FROM kv_state WHERE key IN ('clock', 'fx_last_try', 'compacted')"),
+    db.prepare("SELECT value FROM config WHERE key = 'day0'"),
+    db.prepare("SELECT date, eur_per_usd FROM fx_rates ORDER BY date DESC LIMIT 1"),
+    db.prepare("SELECT ts, c FROM bars_1m WHERE symbol = ? AND ts >= ? ORDER BY ts DESC LIMIT 1").bind(BENCHMARK, sessionStart),
+  ]);
+  const map = new Map<string, unknown>();
+  for (const r of (kv?.results ?? []) as { key: string; value: string }[]) map.set(r.key, JSON.parse(r.value));
+  const c = (cfg?.results?.[0] as { value: string } | undefined)?.value;
+  const f = fx?.results?.[0] as { date: string; eur_per_usd: number } | undefined;
+  const b = bar?.results?.[0] as { ts: number; c: number } | undefined;
+  return {
+    clock: (map.get("clock") as CachedClock | undefined) ?? null,
+    fxLastTry: (map.get("fx_last_try") as number | undefined) ?? null,
+    compacted: (map.get("compacted") as string | undefined) ?? null,
+    day0: c ? (JSON.parse(c) as Day0) : null,
+    latestRate: f ? { date: f.date, eurPerUsd: f.eur_per_usd } : null,
+    lastSpy: b ? { price: b.c, ts: b.ts } : null,
+  };
+}
+
 function keysOf(env: Env): AlpacaKeys | null {
   return env.ALPACA_KEY_ID && env.ALPACA_SECRET_KEY ? { keyId: env.ALPACA_KEY_ID, secretKey: env.ALPACA_SECRET_KEY } : null;
 }
@@ -102,17 +134,19 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
   }
 
   try {
-    const { clock, save } = await getClock(db, fetcher, keys, now);
+    const sessionStart = zonedToUtc(ny.date, "09:30", NY);
+    const pre = await preload(db, sessionStart);
+    const { clock, save } = await getClock(db, fetcher, keys, now, pre.clock);
     if (save) statements.push(save);
     if (save && clock.isOpen) statements.push(kvPut(db, "last_open_date", ny.date, now));
     if (!clock.isOpen) {
-      await compactOnceADay(db, now, ny.date, ny.minutes, statements);
+      compactOnceADay(db, now, ny.date, ny.minutes, pre.compacted, statements);
       return finish("market_closed");
     }
 
     // Paper guard, every minute, before anything else touches the account.
     const account = await trading(fetcher, keys, "GET", "/v2/account");
-    const day0 = await configGet<Day0>(db, "day0");
+    const day0 = pre.day0;
     const verdict = checkAccount(account, day0?.accountId ?? null);
     statements.push(kvPut(db, "health_alpaca", verdict.ok ? { ok: true, at: now } : { ok: false, at: now, code: verdict.code }, now));
     if (!verdict.ok) {
@@ -125,7 +159,7 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
     // ECB rate (non-blocking: yesterday's rate keeps working).
     let freshRate: FxRate | null = null;
     try {
-      const fx = await refreshRates(db, fetchFn, ny.date, now);
+      const fx = await refreshRates(db, fetchFn, ny.date, now, pre.latestRate, pre.fxLastTry);
       statements.push(...fx.statements);
       freshRate = fx.rates.length ? (fx.rates[fx.rates.length - 1] as FxRate) : null;
       if (fx.fetched) statements.push(kvPut(db, "health_fx", { ok: true, at: now } satisfies Health, now));
@@ -150,12 +184,11 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
 
     // Benchmark bars (milestone 5 adds the armed symbols to the same request).
     const symbols = [BENCHMARK];
-    const sessionStart = zonedToUtc(ny.date, "09:30", NY);
-    const start = await resumeFrom(db, symbols, now, sessionStart);
+    const start = resumeStart(pre.lastSpy?.ts ?? null, now, sessionStart);
     const bars = start < minuteOf(now) ? await fetchBars(fetcher, keys, symbols, start) : [];
     statements.push(...saveBars(db, bars));
     statements.push(kvPut(db, "health_data", { ok: true, at: now } satisfies Health, now));
-    const spy = await latestClose(db, BENCHMARK, bars);
+    const spy = latestClose(BENCHMARK, bars, pre.lastSpy);
 
     const minute = minuteOf(now);
     const a = account as Record<string, unknown>;
@@ -170,7 +203,7 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
     let effectiveDay0 = day0;
     if (!effectiveDay0) {
       // The rate just fetched is not in D1 yet (one batch at the end): take the newer of the two.
-      const stored = await latestRate(db);
+      const stored = pre.latestRate;
       const rate = freshRate && (!stored || freshRate.date > stored.date) ? freshRate : stored;
       if (rate && spy) {
         effectiveDay0 = {
@@ -229,9 +262,8 @@ function errorText(e: unknown): string {
 }
 
 /** After 16:00 New York, once a day: 1-minute points older than 30 days become 15-minute points; bars older than 90 days go. */
-async function compactOnceADay(db: D1Database, now: number, date: string, minutes: number, statements: D1PreparedStatement[]): Promise<void> {
+function compactOnceADay(db: D1Database, now: number, date: string, minutes: number, done: string | null, statements: D1PreparedStatement[]): void {
   if (minutes < 16 * 60) return;
-  const done = await kvGet<string>(db, "compacted");
   if (done === date) return;
   const cutoff = now - RETENTION_FULL_MS;
   for (const table of ["equity_points", "spy_points"]) {

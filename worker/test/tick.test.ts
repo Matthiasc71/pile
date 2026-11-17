@@ -146,8 +146,8 @@ describe("failure is never silent", () => {
       get(target, prop, receiver) {
         if (prop === "batch") {
           return (stmts: D1PreparedStatement[]) => {
-            calls++;
-            if (calls === 1) return Promise.reject(new Error("D1_ERROR: simulated"));
+            // Fail the minute's write batch (the read batch has 4 statements).
+            if (stmts.length > 4 && ++calls === 1) return Promise.reject(new Error("D1_ERROR: simulated"));
             return target.batch(stmts);
           };
         }

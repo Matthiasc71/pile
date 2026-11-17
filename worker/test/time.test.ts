@@ -90,7 +90,7 @@ describe("Frankfurter call", () => {
     await env.DB.prepare("DELETE FROM fx_rates").run();
     await env.DB.prepare("DELETE FROM kv_state").run();
     const { fakeMarket } = await import("./fake");
-    const r = await refreshRates(env.DB, fakeMarket().fetch, "2026-11-17", Date.UTC(2026, 10, 17, 15));
+    const r = await refreshRates(env.DB, fakeMarket().fetch, "2026-11-17", Date.UTC(2026, 10, 17, 15), null, null);
     expect(r.rates.map((x) => x.date)).toEqual(["2026-11-13", "2026-11-16"]);
   });
 });

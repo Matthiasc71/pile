@@ -3,8 +3,12 @@
     "target": "ES2023",
     "module": "ES2022",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023"],
-    "types": ["@cloudflare/workers-types"],
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "@cloudflare/workers-types"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -15,5 +19,7 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test"]
+  "include": [
+    "src"
+  ]
 }

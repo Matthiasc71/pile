@@ -3,12 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.8.4",
     "@cloudflare/workers-types": "5.20261117.1",
-    "vitest": "4.1.12"
+    "vitest": "4.1.12",
+    "wrangler": "4.164.0"
   },
   "dependencies": {
     "zod": "4.6.7"

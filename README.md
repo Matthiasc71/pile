@@ -25,6 +25,31 @@ design/           maquettes de référence
 docs/plan.md      plan de construction
 ```
 
+## Mise en route (depuis un navigateur, sans terminal)
+
+1. **Jeton API Cloudflare.** Dans Cloudflare : *My Profile › API Tokens › Create Token*, modèle **Edit Cloudflare Workers**.
+   - Ajoute la permission **Account › D1 › Edit**.
+   - Limite *Account Resources* à ton compte.
+2. **Identifiant de compte.** *Workers & Pages* : l'**Account ID** est affiché dans la colonne de droite.
+3. **Secrets GitHub.** *GitHub › pile › Settings › Secrets and variables › Actions › New repository secret* :
+   - `CLOUDFLARE_API_TOKEN` ;
+   - `CLOUDFLARE_ACCOUNT_ID`.
+4. **Déploiement.** Il part tout seul après chaque CI verte sur `main` (ou *Actions › Deploy › Run workflow*). Au premier passage, il :
+   - crée la base D1 `pile` ;
+   - applique les migrations ;
+   - déploie le Worker ;
+   - génère `TOKEN_PEPPER` sans jamais l'afficher.
+
+   L'adresse du Worker (`https://pile.<sous-domaine>.workers.dev`) est dans le log de l'étape « Déploiement du Worker ».
+5. **Compte paper Alpaca dédié.** Crée-le avec 50 € convertis au taux BCE du jour. Puis mets ses clés dans *Workers & Pages › pile › Settings › Variables and Secrets › Add*, de type **Secret** :
+   - `ALPACA_KEY_ID` ;
+   - `ALPACA_SECRET_KEY`.
+
+   Les secrets survivent aux déploiements suivants.
+6. **Premier appairage (jalon 3).** Crée de la même façon un secret `PAIR_BOOTSTRAP`, une phrase d'au moins 16 caractères (un mot de passe suggéré par l'iPhone convient). Tape-la une fois dans la PWA installée : elle ne fonctionnera plus jamais ensuite.
+
+Le premier tick en séance avec les bonnes clés enregistre le **jour 0** : identifiant du compte (épinglé), capital en dollars, taux BCE et ligne de base de 50 €.
+
 ## Vérifier en local
 
 ```bash

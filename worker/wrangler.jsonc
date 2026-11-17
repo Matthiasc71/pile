@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pile",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // One cron for Pile (the account allows 5 on the free plan; Isoligne uses 1).
+  // Outside 9:25-16:10 New York it returns without any I/O.
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pile",
+      // Filled in by CI at deploy time (scripts/ci_d1.mjs). Not a secret.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true },
+  "workers_dev": true,
+  "preview_urls": false
+}

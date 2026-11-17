@@ -48,13 +48,23 @@ Statut : **proposition, en attente de ton feu vert.** Rien n'est codé au-delà 
 5. **Tu n'as pas de terminal** (Claude Code sur navigateur), donc pas de `wrangler secret put` ni de `npm run pair` chez toi. Je remplace :
    - **Clés Alpaca** : tu les colles toi-même dans le tableau de bord Cloudflare (Worker › Settings › Variables and Secrets › *Secret*). Ça marche depuis un navigateur, même sur iPhone.
    - **Clés VAPID et sel des jetons** : une GitHub Action manuelle `setup-secrets` les génère et les pousse directement en secrets du Worker. Elles ne sont jamais affichées, ni dans le chat ni dans les logs.
-   - **Premier appairage** : une GitHub Action manuelle `pair` crée un code à usage unique valable 10 min et l'affiche dans le résumé du job (visible seulement par toi, dépôt privé). Les appareils suivants s'appairent depuis l'écran Système d'un appareil déjà appairé.
+   - **Premier appairage** : le dépôt est **public**, donc les logs et les résumés des GitHub Actions le sont aussi. Aucun code n'y passera jamais. À la place :
+     - tu crées toi-même un secret Worker `PAIR_BOOTSTRAP` dans le tableau de bord Cloudflare (un mot de passe généré par ton iPhone) ;
+     - tu le tapes une fois dans la PWA installée ;
+     - le veilleur le marque **consommé** dans D1 : il ne sert qu'une fois, même s'il reste dans les secrets.
+     - Les appareils suivants s'appairent avec un code de 8 caractères valable 10 min, créé depuis l'écran Système d'un appareil déjà appairé.
+     - `/api/pair` est limité : 5 échecs, puis blocage de 15 min.
    - **Déploiement** : uniquement par la CI. Tu ajoutes un secret GitHub `CLOUDFLARE_API_TOKEN` aux droits restreints (Workers + D1 de ton compte).
 6. **Jeton de Claude encore mieux protégé** : au lieu d'une variable d'environnement `PILE_API_TOKEN` lisible par la session, l'environnement Claude Code peut enregistrer le jeton comme **secret réseau**. Le proxy l'injecte alors dans l'en-tête `Authorization` des requêtes vers le domaine du veilleur, et Claude ne le voit jamais. `SEC_USER_AGENT` reste une variable d'environnement (ce n'est pas un jeton).
 7. **Repli si Yahoo bloque** : Claude n'a pas de clé Alpaca (règle 0.2). Le veilleur expose donc `GET /api/bars` (portée claude, symboles et plage bornés) : il relaie les barres IEX avec ses propres clés. Les outils du skill qui lisent un fichier de barres (Time Machine, entrée, sortie) reçoivent ces données converties au format qu'ils attendent. Le passage le signale dans le journal et dans le « pourquoi ».
 8. **Empreinte `PASS`** : `trader-risk` calcule l'empreinte de l'ordre **exact** qu'il a vérifié. Or le veilleur recalcule la taille sur le prix réel, donc l'empreinte ne peut pas correspondre à l'ordre final. Je propose :
    - le veilleur exige une empreinte présente et bien formée, liée au plan (hachage du plan sans le champ `risk_pass`) ;
    - puis il refait **toutes** les règles sur l'ordre réel. C'est ce second contrôle qui fait foi.
+9. **Préfixe `PA` des comptes paper** : aucune doc officielle d'Alpaca ne le décrit, seul du code tiers s'en sert. Il reste donc **un contrôle parmi d'autres**, confirmé sur ton vrai compte au jalon 2. Les vrais verrous sont :
+   - l'URL paper en constante (les clés paper ne marchent que là, les clés réelles y sont refusées) ;
+   - le capital < 500 $ ;
+   - l'**identifiant exact du compte**, épinglé dans D1 au jour 0 : tout autre compte, même paper, est refusé.
+10. **Dépôt public** : rien de personnel n'est commité (auteur des commits : `Claude <noreply@anthropic.com>`, pas ton adresse). Les secrets restent dans Cloudflare et GitHub Secrets, gitleaks scanne tout l'historique, et la CI ne déploie que depuis `main` (jamais depuis une PR externe).
 
 ---
 
@@ -70,7 +80,7 @@ Statut : **proposition, en attente de ton feu vert.** Rien n'est codé au-delà 
                                                                             │ PAPER_BASE (constante)
                                      iPhone (PWA installée) ◀─▶ /api/*      ▼ + data.alpaca (IEX)
                                                                         Alpaca paper · Frankfurter
- * ou GitHub Pages si tu préfères (question 1)
+ * hébergement de la PWA : Worker (réponse 1.a), à confirmer
 ```
 
 ### Le veilleur, minute par minute, dans 10 ms de CPU
@@ -159,7 +169,7 @@ pile/
 
 | # | Contenu | Ce que je te montre |
 |---|---|---|
-| **1. Socle** | dépôt, `.gitignore`, CI (lint, types, tests skill + Pile, gitleaks, garde `api.alpaca.markets` sans `paper-`, `impeccable detect`), constante `PAPER_BASE`, contrôles paper (préfixe `PA`, capital < 500 $) testés | CI verte, tests de garde qui échouent quand on viole un verrou |
+| **1. Socle** | dépôt, `.gitignore`, CI (lint, types, tests skill + Pile, gitleaks, garde « domaine Alpaca réel interdit » (`scripts/check_paper_lock.py`), `impeccable detect`), constante `PAPER_BASE`, contrôles paper (préfixe `PA`, capital < 500 $) testés | CI verte, tests de garde qui échouent quand on viole un verrou |
 | **2. Veilleur, lecture seule** | D1 + migrations, horloge, points de capital, Frankfurter (format revérifié), SPY, `state`/`series`, appairage, jetons hachés, `bars_1m` | une séance réelle enregistrée, réponses `state`/`series`, mesure CPU |
 | **3. App** | lancement animé, tableau de bord oscilloscope sur vraies données, historique et système vides mais finis, PWA installable ; boucle Impeccable (`shape` → `distill`/`quieter` → `critique`/`audit` → P0/P1 → `polish`) | captures Playwright **côte à côte avec les maquettes**, rapport Impeccable |
 | **4. Cerveau** | `ops/`, 4 passages **à la main**, Time Machine stricte, foule, `POST /api/plans` ; puis environnement réseau + 4 tâches planifiées créés avec toi | journaux des passages, plans reçus, aucun ordre |
@@ -170,13 +180,13 @@ pile/
 ---
 
 ## 6. Ce que tu fais (au bon moment, je te guiderai)
-- **Maintenant** : créer le dépôt GitHub `pile` (privé, vide). Je m'y connecte et je pousse le socle.
+- ~~Créer le dépôt GitHub `pile`~~ : fait (public).
 - **Jalon 1** : jeton API Cloudflare restreint, à mettre en secret GitHub `CLOUDFLARE_API_TOKEN` (avec `CLOUDFLARE_ACCOUNT_ID`).
 - **Jalon 2** :
   - le compte paper Alpaca (montant exact en dollars donné le jour J) ;
   - ses clés, collées dans le tableau de bord Cloudflare ;
   - lancer l'Action `setup-secrets` ;
   - créer la base D1, ou laisser la CI la créer.
-- **Jalon 3** : ajouter la PWA à l'écran d'accueil, puis lancer l'Action `pair` et taper le code.
+- **Jalon 3** : ajouter la PWA à l'écran d'accueil, créer le secret `PAIR_BOOTSTRAP` dans Cloudflare et le taper dans la PWA.
 - **Jalon 4** : approuver l'environnement réseau et le secret réseau du jeton Claude, définir `SEC_USER_AGENT`.
 - **Jalon 7** : autoriser les notifications sur l'iPhone.

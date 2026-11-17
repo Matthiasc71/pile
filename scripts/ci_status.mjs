@@ -35,7 +35,7 @@ function d1() {
   const fx = query("SELECT date, eur_per_usd FROM fx_rates ORDER BY date DESC LIMIT 3");
   const day0Row = query("SELECT value FROM config WHERE key = 'day0'")[0];
   const devices = query("SELECT scope, COUNT(*) AS n FROM devices WHERE revoked_at IS NULL GROUP BY scope");
-  const alerts = query("SELECT ts, level, code FROM alerts ORDER BY id DESC LIMIT 10");
+  const alerts = query("SELECT ts, level, code, message FROM alerts ORDER BY id DESC LIMIT 10");
   const migrations = query("SELECT name FROM d1_migrations ORDER BY id").map((r) => r.name);
 
   const lines = [];
@@ -61,7 +61,7 @@ function d1() {
   lines.push("- taux BCE : " + (fx.map((r) => r.date + " " + r.eur_per_usd).join(", ") || "—"));
   lines.push("- positions : " + (kv.positions?.items?.length ?? 0) + ", pause : " + (kv.pause?.active ? "oui" : "non"));
   lines.push("- appareils : " + (devices.map((r) => r.scope + " " + r.n).join(", ") || "aucun"));
-  lines.push("- alertes récentes : " + (alerts.map((a) => iso(a.ts) + " " + a.level + " " + a.code).join(" | ") || "aucune"));
+  lines.push("- alertes récentes : " + (alerts.map((a) => "\n  - " + iso(a.ts) + " " + a.level + " " + a.code + " : " + a.message).join("") || "aucune"));
   return lines.join("\n");
 }
 

@@ -5,7 +5,7 @@
  * against IEX.
  */
 import { marketData, type AlpacaKeys, type Fetcher } from "./alpaca";
-import { BarsResponseSchema, type AlpacaBar } from "./schemas";
+import { parseBars, type AlpacaBar } from "./schemas";
 
 const MAX_PAGES = 2;
 const LOOKBACK_MS = 30 * 60 * 1000;
@@ -50,11 +50,11 @@ export async function fetchBars(fetcher: Fetcher, keys: AlpacaKeys, symbols: rea
       limit: "1000",
     });
     if (pageToken) q.set("page_token", pageToken);
-    const parsed = BarsResponseSchema.parse(await marketData(fetcher, keys, "/v2/stocks/bars?" + q.toString()));
+    const parsed = parseBars(await marketData(fetcher, keys, "/v2/stocks/bars?" + q.toString()));
     for (const [symbol, bars] of Object.entries(parsed.bars ?? {})) {
       for (const b of bars) out.push(toBar(symbol, b));
     }
-    pageToken = parsed.next_page_token ?? null;
+    pageToken = parsed.next_page_token;
     if (!pageToken) break;
   }
   return out;

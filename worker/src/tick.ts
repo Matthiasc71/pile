@@ -14,7 +14,7 @@ import type { Deps, Env } from "./env";
 import { latestRate, refreshRates, type FxRate } from "./fx";
 import { checkAccount } from "./guard";
 import { fetchBars, latestClose, resumeFrom, saveBars } from "./market";
-import { PositionsSchema } from "./schemas";
+import { parsePositions } from "./schemas";
 import { alert, configGet, configPut, kvGet, kvPut } from "./store";
 import { NY, inWatchWindow, minuteOf, zoned, zonedToUtc } from "./time";
 
@@ -134,7 +134,7 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
       statements.push(alert(db, now, "warn", "veilleur", "fx_unavailable", "Taux BCE indisponible : dernier taux connu utilisé. " + errorText(e), "fx:" + ny.date));
     }
 
-    const positions = PositionsSchema.parse(await trading(fetcher, keys, "GET", "/v2/positions"));
+    const positions = parsePositions(await trading(fetcher, keys, "GET", "/v2/positions"));
     const snapshot: PositionSnapshot = {
       at: now,
       items: positions.map((p) => ({

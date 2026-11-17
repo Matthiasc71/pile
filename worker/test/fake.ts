@@ -51,7 +51,10 @@ export function fakeMarket(opts: FakeOptions = {}): Deps & { calls: string[] } {
   const fetchFn = async (input: URL | string, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
     calls.push(url.origin + url.pathname);
-    void init;
+    // Like workerd: only "follow" and "manual" exist.
+    if (init?.redirect !== undefined && init.redirect !== "follow" && init.redirect !== "manual") {
+      throw new TypeError("Invalid redirect value, must be one of \"follow\" or \"manual\"");
+    }
     if (url.origin === PAPER_BASE) {
       if (url.pathname === "/v2/clock") {
         return reply({ timestamp: new Date().toISOString(), is_open: o.isOpen, next_open: new Date(o.isOpen ? T.nextOpen : T.open).toISOString(), next_close: new Date(T.close).toISOString() });

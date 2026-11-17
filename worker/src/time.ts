@@ -1,30 +1,43 @@
 /**
- * Time zones without dependencies. New York for the market, Paris for display,
- * computed with Intl so daylight saving changes (including the weeks when
- * Paris and New York are 5 hours apart) are never hard-coded.
+ * Time zones without Intl. Creating an Intl.DateTimeFormat with a time zone
+ * costs tens of milliseconds of CPU on a cold isolate, more than the whole
+ * 10 ms budget of a free cron. The two zones Pile needs follow fixed rules:
+ *
+ * - New York: UTC-5, daylight time UTC-4 from the second Sunday of March at
+ *   2:00 local (7:00 UTC) to the first Sunday of November at 2:00 local
+ *   (6:00 UTC). US rule since 2007.
+ * - Paris: UTC+1, summer time UTC+2 from the last Sunday of March to the last
+ *   Sunday of October, both at 1:00 UTC. EU rule since 1996.
+ *
+ * Nothing is hard-coded per year, so the weeks when Paris and New York are
+ * 5 hours apart come out right. Tests compare this with Intl hour by hour.
  */
 
 export const NY = "America/New_York";
 export const PARIS = "Europe/Paris";
+export type Zone = typeof NY | typeof PARIS;
 
-const formatters = new Map<string, Intl.DateTimeFormat>();
-function formatter(tz: string): Intl.DateTimeFormat {
-  let f = formatters.get(tz);
-  if (!f) {
-    f = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      weekday: "short",
-    });
-    formatters.set(tz, f);
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/** UTC ms of the n-th Sunday (n >= 1) of a month, or the last one (n = -1), at a UTC hour. */
+function sunday(year: number, month: number, n: number, utcHour: number): number {
+  if (n > 0) {
+    const first = new Date(Date.UTC(year, month, 1)).getUTCDay();
+    const day = 1 + ((7 - first) % 7) + (n - 1) * 7;
+    return Date.UTC(year, month, day, utcHour);
   }
-  return f;
+  const lastDate = new Date(Date.UTC(year, month + 1, 0));
+  return Date.UTC(year, month, lastDate.getUTCDate() - lastDate.getUTCDay(), utcHour);
+}
+
+/** Offset from UTC in hours at an instant. */
+export function offsetHours(ms: number, tz: Zone): number {
+  const year = new Date(ms).getUTCFullYear();
+  if (tz === NY) {
+    return ms >= sunday(year, 2, 2, 7) && ms < sunday(year, 10, 1, 6) ? -4 : -5;
+  }
+  return ms >= sunday(year, 2, -1, 1) && ms < sunday(year, 9, -1, 1) ? 2 : 1;
 }
 
 export interface ZonedParts {
@@ -39,42 +52,35 @@ export interface ZonedParts {
   readonly weekday: number;
 }
 
-const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-
-export function zoned(ms: number, tz: string): ZonedParts {
-  const parts: Record<string, string> = {};
-  for (const p of formatter(tz).formatToParts(new Date(ms))) parts[p.type] = p.value;
-  const hour = Number(parts["hour"]);
-  const minute = Number(parts["minute"]);
+export function zoned(ms: number, tz: Zone): ZonedParts {
+  const local = new Date(ms + offsetHours(ms, tz) * HOUR);
+  const hour = local.getUTCHours();
+  const minute = local.getUTCMinutes();
   return {
-    date: parts["year"] + "-" + parts["month"] + "-" + parts["day"],
+    date: local.toISOString().slice(0, 10),
     hour,
     minute,
-    second: Number(parts["second"]),
+    second: local.getUTCSeconds(),
     minutes: hour * 60 + minute,
-    weekday: WEEKDAYS[parts["weekday"] ?? ""] ?? -1,
+    weekday: local.getUTCDay(),
   };
 }
 
 /** UTC milliseconds of a wall-clock time (YYYY-MM-DD, HH:MM) in a zone. */
-export function zonedToUtc(date: string, hhmm: string, tz: string): number {
+export function zonedToUtc(date: string, hhmm: string, tz: Zone): number {
   const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
   const [h, mi] = hhmm.split(":").map(Number) as [number, number];
-  const guess = Date.UTC(y, mo - 1, d, h, mi);
-  // Two passes settle the offset, including across a DST change.
-  let ms = guess;
-  for (let i = 0; i < 2; i++) {
-    const p = zoned(ms, tz);
-    const asUtc = Date.UTC(Number(p.date.slice(0, 4)), Number(p.date.slice(5, 7)) - 1, Number(p.date.slice(8, 10)), p.hour, p.minute);
-    ms += guess - asUtc;
-  }
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  // Try the standard offset, then correct once if daylight time applies.
+  let ms = wall - offsetHours(wall, tz) * HOUR;
+  ms = wall - offsetHours(ms, tz) * HOUR;
   return ms;
 }
 
 /** Add whole days to a YYYY-MM-DD date. */
 export function addDays(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(y, m - 1, d) + days * DAY).toISOString().slice(0, 10);
 }
 
 /** The watcher's daily window in New York: 9:25 to 16:10, Monday to Friday. */

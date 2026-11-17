@@ -8,7 +8,7 @@
  * the headline figure uses the latest rate.
  */
 import type { FetchFn } from "./env";
-import { FxSeriesSchema } from "./schemas";
+import { parseFxSeries } from "./schemas";
 import { kvGet, kvPut } from "./store";
 import { addDays } from "./time";
 
@@ -69,16 +69,17 @@ export async function refreshRates(db: D1Database, fetchFn: FetchFn, today: stri
   const statements: D1PreparedStatement[] = [kvPut(db, "fx_last_try", now, now)];
   const start = latest ? addDays(latest.date, 1) : addDays(today, -BACKFILL_DAYS);
   const url = FRANKFURTER + start + "..?base=USD&symbols=EUR";
-  const res = await fetchFn(url, { headers: { Accept: "application/json" }, redirect: "error" });
+  const res = await fetchFn(url, { headers: { Accept: "application/json" }, redirect: "manual" });
   // 404: the range starts after the last published rate (nothing new yet).
   if (res.status === 404) return { statements, fetched: true, rates: [] };
+  // Workers only support "follow" and "manual": a redirect is refused here.
   if (!res.ok) throw new Error("frankfurter: HTTP " + res.status);
-  const parsed = FxSeriesSchema.parse(await res.json());
+  const parsed = parseFxSeries(await res.json());
   const rates: FxRate[] = [];
-  for (const [date, r] of Object.entries(parsed.rates)) {
-    rates.push({ date, eurPerUsd: r.EUR });
+  for (const { date, eur } of parsed) {
+    rates.push({ date, eurPerUsd: eur });
     statements.push(
-      db.prepare("INSERT INTO fx_rates (date, eur_per_usd, fetched_at) VALUES (?, ?, ?) ON CONFLICT(date) DO NOTHING").bind(date, r.EUR, now),
+      db.prepare("INSERT INTO fx_rates (date, eur_per_usd, fetched_at) VALUES (?, ?, ?) ON CONFLICT(date) DO NOTHING").bind(date, eur, now),
     );
   }
   rates.sort((a, b) => (a.date < b.date ? -1 : 1));

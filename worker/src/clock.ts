@@ -4,7 +4,7 @@
  * or the cache is stale, so a normal minute costs no subrequest.
  */
 import { trading, type AlpacaKeys, type Fetcher } from "./alpaca";
-import { ClockSchema } from "./schemas";
+import { parseClock } from "./schemas";
 import { kvGet, kvPut } from "./store";
 
 export interface CachedClock {
@@ -27,7 +27,7 @@ export function clockNeedsRefresh(c: CachedClock | null, now: number): boolean {
 export async function getClock(db: D1Database, fetcher: Fetcher, keys: AlpacaKeys, now: number): Promise<{ clock: CachedClock; save: D1PreparedStatement | null }> {
   const cached = await kvGet<CachedClock>(db, KEY);
   if (cached && !clockNeedsRefresh(cached, now)) return { clock: cached, save: null };
-  const raw = ClockSchema.parse(await trading(fetcher, keys, "GET", "/v2/clock"));
+  const raw = parseClock(await trading(fetcher, keys, "GET", "/v2/clock"));
   const clock: CachedClock = {
     isOpen: raw.is_open,
     nextOpen: Date.parse(raw.next_open),

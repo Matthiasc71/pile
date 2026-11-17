@@ -82,6 +82,7 @@ jobs:
         run: |
           # Two cron events (~2 min) to measure real CPU time. Outside the
           # session the tick returns at once, so this measures the fast path.
-          timeout 130 npx wrangler tail pile --format json > "$RUNNER_TEMP/tail.json" 2>/dev/null || true
+          timeout 130 npx wrangler tail pile --format json > "$RUNNER_TEMP/tail.json" 2> "$RUNNER_TEMP/tail.err" || true
+          echo "wrangler tail (stderr) :"; grep -vE '^\s*$' "$RUNNER_TEMP/tail.err" | head -20 || true
           node ../scripts/ci_status.mjs d1 | tee -a "$GITHUB_STEP_SUMMARY"
           node ../scripts/ci_status.mjs tail "$RUNNER_TEMP/tail.json" | tee -a "$GITHUB_STEP_SUMMARY"

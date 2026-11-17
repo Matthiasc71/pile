@@ -138,3 +138,29 @@ describe("compaction", () => {
     expect(await count("equity_points")).toBe(3);
   });
 });
+
+describe("failure is never silent", () => {
+  it("keeps the heartbeat and the reason when the minute's batch fails", async () => {
+    let calls = 0;
+    const db = new Proxy(env.DB, {
+      get(target, prop, receiver) {
+        if (prop === "batch") {
+          return (stmts: D1PreparedStatement[]) => {
+            calls++;
+            if (calls === 1) return Promise.reject(new Error("D1_ERROR: simulated"));
+            return target.batch(stmts);
+          };
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const m = fakeMarket({ spyCloses: { [T.at(9, 59)]: 670 } });
+    const r = await tick({ ...KEYED, DB: db }, T.at(10, 0), m);
+    expect(r).toMatchObject({ status: "error", detail: "batch_failed" });
+    const hb = await env.DB.prepare("SELECT value FROM kv_state WHERE key = 'last_tick'").first<{ value: string }>();
+    expect(JSON.parse(hb?.value ?? "{}")).toMatchObject({ at: T.at(10, 0), error: "batch_failed" });
+    expect((await alerts()).map((a) => a.code)).toEqual(["batch_failed"]);
+    expect(await count("equity_points")).toBe(0);
+  });
+});

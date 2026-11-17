@@ -84,7 +84,14 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
   };
   const statements: D1PreparedStatement[] = [kvPut(db, "last_tick", { at: now }, now)];
   const finish = async (status: TickStatus, detail?: string): Promise<TickReport> => {
-    await db.batch(statements);
+    try {
+      await db.batch(statements);
+    } catch (e) {
+      // The batch is atomic: one bad statement loses the whole minute. Keep
+      // at least the heartbeat and the reason, so a failure is never silent.
+      await recordFailure(db, now, ny.date, "batch_failed", e);
+      return { status: "error", subrequests, detail: "batch_failed" };
+    }
     return detail === undefined ? { status, subrequests } : { status, subrequests, detail };
   };
 
@@ -201,6 +208,19 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
       alert(db, now, lock || auth ? "critical" : "warn", "veilleur", code, errorText(e), code + ":" + ny.date + ":" + (lock || auth ? "" : ny.hour)),
     );
     return finish("error", code);
+  }
+}
+
+/** Last-resort record of a failed minute: heartbeat with the reason, and one alert per hour. */
+export async function recordFailure(db: D1Database, now: number, nyDate: string, code: string, e: unknown): Promise<void> {
+  const text = errorText(e).slice(0, 300);
+  try {
+    await db.batch([
+      kvPut(db, "last_tick", { at: now, error: code, message: text }, now),
+      alert(db, now, "critical", "veilleur", code, "Minute non enregistrée : " + text, code + ":" + nyDate + ":" + zoned(now, NY).hour),
+    ]);
+  } catch (inner) {
+    console.error(JSON.stringify({ tick_record_failure: errorText(inner), original: text }));
   }
 }
 

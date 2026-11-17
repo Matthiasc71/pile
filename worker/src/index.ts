@@ -4,7 +4,8 @@
  */
 import { handleApi, json } from "./api";
 import { defaultDeps, type Env } from "./env";
-import { tick } from "./tick";
+import { recordFailure, tick } from "./tick";
+import { NY, zoned } from "./time";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -15,9 +16,15 @@ export default {
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      tick(env, controller.scheduledTime, defaultDeps).then((r) => {
-        if (r.status !== "outside_window") console.log(JSON.stringify({ tick: r.status, subrequests: r.subrequests, detail: r.detail ?? null }));
-      }),
+      tick(env, controller.scheduledTime, defaultDeps).then(
+        (r) => {
+          if (r.status !== "outside_window") console.log(JSON.stringify({ tick: r.status, subrequests: r.subrequests, detail: r.detail ?? null }));
+        },
+        async (e: unknown) => {
+          console.error(JSON.stringify({ tick: "crash", error: e instanceof Error ? e.name + ": " + e.message : String(e) }));
+          await recordFailure(env.DB, controller.scheduledTime, zoned(controller.scheduledTime, NY).date, "tick_crash", e);
+        },
+      ),
     );
   },
 } satisfies ExportedHandler<Env>;

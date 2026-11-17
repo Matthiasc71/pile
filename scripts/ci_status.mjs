@@ -36,10 +36,12 @@ function d1() {
   const day0Row = query("SELECT value FROM config WHERE key = 'day0'")[0];
   const devices = query("SELECT scope, COUNT(*) AS n FROM devices WHERE revoked_at IS NULL GROUP BY scope");
   const alerts = query("SELECT ts, level, code FROM alerts ORDER BY id DESC LIMIT 10");
+  const migrations = query("SELECT name FROM d1_migrations ORDER BY id").map((r) => r.name);
 
   const lines = [];
   lines.push("## Veilleur : état D1");
-  lines.push("- dernier tick : " + iso(kv.last_tick?.at));
+  lines.push("- migrations : " + (migrations.join(", ") || "aucune"));
+  lines.push("- dernier tick : " + iso(kv.last_tick?.at) + (kv.last_tick?.error ? " — ÉCHEC " + kv.last_tick.error + " : " + kv.last_tick.message : ""));
   lines.push("- horloge : " + (kv.clock ? (kv.clock.isOpen ? "ouvert" : "fermé") + ", prochaine ouverture " + iso(kv.clock.nextOpen) + ", fermeture " + iso(kv.clock.nextClose) : "—"));
   for (const h of ["health_alpaca", "health_data", "health_fx"]) {
     const v = kv[h];

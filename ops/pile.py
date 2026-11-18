@@ -289,7 +289,7 @@ def cmd_armer(a):
         chosen.append(sym)
     # The ghost trades every candidate the raw skill would, chosen or not.
     plans += [c["fantome"] for c in d["candidats"] if c.get("fantome")]
-    body = {"pass": d["pass"], "date": d["date"], "generated_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    body = {"pass": d["pass"], "date": d["date"], "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "equity_usd": d["equity_usd"], "limits": d["limits"], "plans": plans}
     if d["crowd"]["score"] is not None:
         body["crowd"] = {"score": d["crowd"]["score"], "components": d["crowd"]["components"]}
@@ -350,7 +350,7 @@ def cmd_desarmer(a):
         raise SkillError("aucun plan armé pour %s" % sym)
     m = s.get("money") or {}
     lim = s.get("limits") or {}
-    body = {"pass": "mi-seance", "date": today(), "generated_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    body = {"pass": "mi-seance", "date": today(), "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "equity_usd": m.get("usd") or 1, "limits": {"max_loss_trade_usd": lim.get("max_loss_trade_usd") or 0.01, "max_daily_loss_usd": lim.get("max_daily_loss_usd") or 0.01, "max_trades": 3},
             "plans": [], "disarm": ids}
     res = p.post_plans(body)

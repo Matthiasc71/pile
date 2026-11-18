@@ -117,7 +117,7 @@ def chart_from_iex(symbol, bars, previous_close=None):
 
 
 def fetch_iex_chart(api, symbol, days=62):
-    start = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     bars, token = [], None
     for _ in range(5):
         page = api.bars([symbol], "5Min", start, page_token=token)

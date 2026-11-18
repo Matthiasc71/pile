@@ -36,6 +36,15 @@ TRADER = os.path.join(WORK, "trader")
 WATCH_MAX = 6
 NEWS_TOP = 20
 # trader-news tags that rule a day trade out (brief 5.4), plus 8-K item 4.02 (restatement).
+# The exact scanner and news calls of the passes (tested offline in ops/tests).
+DAILY_ARGS = ["daily", "--quiet", "--json", "--show", "0"]
+
+
+def news_args(tickers, hours, sec=True):
+    args = ["--tickers"] + list(tickers) + ["--hours", str(hours), "--all", "--dry-run", "--json"]
+    return args if sec else args + ["--no-sec"]
+
+
 BAD_TAGS = {"earnings", "halt", "risk", "restatement"}
 
 
@@ -126,7 +135,7 @@ def cmd_avant_ouverture(a):
     s = p.state()
     cfg, equity, _ = prepare(s)
     run("scan", ["universe"], WORK, timeout=300)
-    code, scan, err = run("scan", ["daily", "--quiet", "--json", "--show", "0", "--config", "trader/config.json"], WORK, timeout=1500)
+    code, scan, err = run("scan", DAILY_ARGS, WORK, timeout=1500)
     if not scan:
         raise SkillError("scan : " + err)
     hits = scan.get("hits") or []
@@ -134,7 +143,7 @@ def cmd_avant_ouverture(a):
     tickers = [h["symbol"] for h in top]
     news = {}
     if tickers:
-        code, nj, err = run("news", ["--tickers"] + tickers + ["--hours", "20", "--all", "--dry-run", "--no-moves", "--json"], WORK, timeout=900, ok_codes=(0, 1))
+        code, nj, err = run("news", news_args(tickers, 20, bool(os.environ.get("SEC_USER_AGENT"))) + ["--no-moves"], WORK, timeout=900, ok_codes=(0, 1))
         for it in (nj or {}).get("items", []):
             news.setdefault(it.get("ticker"), []).append(it)
     rows = []
@@ -303,7 +312,7 @@ def cmd_mi_seance(a):
     syms = [pl["symbol"] for pl in armed]
     news = {}
     if syms:
-        code, nj, err = run("news", ["--tickers"] + syms + ["--hours", "4", "--all", "--dry-run", "--json"], WORK, timeout=600, ok_codes=(0, 1))
+        code, nj, err = run("news", news_args(syms, 4, bool(os.environ.get("SEC_USER_AGENT"))), WORK, timeout=600, ok_codes=(0, 1))
         for it in (nj or {}).get("items", []):
             news.setdefault(it.get("ticker"), []).append(it)
     d = {"date": now.strftime("%Y-%m-%d"), "armes": armed, "news": news}

@@ -46,7 +46,7 @@ describe("authentication", () => {
   it("separates the app and claude scopes", async () => {
     const claude = (await issueToken(env, "claude", "passes", NOW)).token;
     expect((await call("GET", "/api/state", { token: claude })).status).toBe(200);
-    expect((await call("GET", "/api/series?range=1j", { token: claude })).status).toBe(403);
+    expect((await call("GET", "/api/series?range=1j", { token: claude })).status).toBe(200);
     expect((await call("POST", "/api/pause", { token: claude, body: { active: true } })).status).toBe(403);
     expect((await call("POST", "/api/tokens", { token: claude, body: { scope: "app", name: "x" } })).status).toBe(403);
   });

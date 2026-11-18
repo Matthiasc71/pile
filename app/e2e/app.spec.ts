@@ -66,6 +66,8 @@ test.describe("dashboard", () => {
     await expect(page.locator(".scope text", { hasText: "T 50 €" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Prochain passage de Claude : 18:00/ })).toBeVisible();
     await expect(page.getByRole("img", { name: "Séance ouverte" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Plans du jour" })).toBeVisible();
+    await expect(page.getByText(/Aucun trade armé aujourd'hui/)).toBeVisible();
     await page.waitForTimeout(700); // trace drawn
     await page.screenshot({ path: join(SHOTS, "tableau.png") });
 

@@ -1,4 +1,5 @@
 /** GET /api/state: everything the dashboard needs, from D1 only (no Alpaca call). */
+import { plansOf } from "./brain";
 import { readClock, type CachedClock } from "./clock";
 import { latestRate } from "./fx";
 import { configGet, kvGet } from "./store";
@@ -70,7 +71,8 @@ interface Health {
 }
 
 export async function buildState(db: D1Database, now: number): Promise<unknown> {
-  const [pause, clock, lastTick, lastOpenDate, day0, rate, equity, positions, alpaca, data, fx, claudePass, alertsOpen] = await Promise.all([
+  const today = zoned(now, NY).date;
+  const [pause, clock, lastTick, lastOpenDate, day0, rate, equity, positions, alpaca, data, fx, claudePass, alertsOpen, plans, crowd, lastBilan] = await Promise.all([
     readPause(db, now),
     readClock(db),
     kvGet<{ at: number }>(db, "last_tick"),
@@ -84,6 +86,9 @@ export async function buildState(db: D1Database, now: number): Promise<unknown> 
     kvGet<Health>(db, "health_fx"),
     kvGet<{ at: number; pass: string }>(db, "last_claude_pass"),
     db.prepare("SELECT COUNT(*) AS n FROM alerts WHERE acked_at IS NULL AND level != 'info'").first<{ n: number }>(),
+    plansOf(db, today),
+    db.prepare("SELECT date, stars, forks, score FROM crowd_daily WHERE score IS NOT NULL ORDER BY date DESC LIMIT 1").first<{ date: string; stars: number; forks: number; score: number }>(),
+    db.prepare("SELECT date FROM journal WHERE kind = 'bilan' ORDER BY date DESC LIMIT 1").first<{ date: string }>(),
   ]);
 
   let money: unknown = null;
@@ -111,11 +116,13 @@ export async function buildState(db: D1Database, now: number): Promise<unknown> 
     day0: day0 ? { date: day0.date, usd: day0.equityUsd, eur_per_usd: day0.eurPerUsd, fx_date: day0.fxDate } : null,
     positions: positions?.items ?? [],
     positions_as_of: positions?.at ?? null,
-    plans: [],
+    plans,
+    today_is_trading: !!clock && (clock.isOpen || lastOpenDate === today || zoned(clock.nextOpen, NY).date === today),
+    last_bilan_date: lastBilan?.date ?? null,
     limits: equity ? limitsFor(equity.equity_usd) : null,
     passes: passDay(clock, lastOpenDate, now),
     next_pass: nextPass(clock, lastOpenDate, now),
-    crowd: null,
+    crowd: crowd ? { score: crowd.score, date: crowd.date, stars: crowd.stars, forks: crowd.forks } : null,
     alerts_open: alertsOpen?.n ?? 0,
     health: {
       last_tick: lastTick?.at ?? null,

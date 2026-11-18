@@ -631,6 +631,17 @@ ul {
   color: var(--phosphor);
   text-shadow: var(--glow-text);
 }
+.token {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  color: var(--phosphor);
+  word-break: break-all;
+  user-select: all;
+  -webkit-user-select: all;
+}
 .error {
   margin-top: 12px;
   color: var(--loss);

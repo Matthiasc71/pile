@@ -39,7 +39,9 @@ function resolve(base: string, origin: string, path: string): URL {
   if (typeof path !== "string" || !SAFE_PATH.test(path) || path.includes("//") || path.includes("..")) {
     throw new PaperLockError("refused path: only relative /v2/ paths are allowed");
   }
-  if (/%2f|%5c|%2e/i.test(path)) {
+  // Encoded separators are refused in the path; the query (page tokens are
+  // base64 and may hold "/") cannot change the origin.
+  if (/%2f|%5c|%2e/i.test(path.split("?")[0] ?? "")) {
     throw new PaperLockError("refused path: encoded separators are not allowed");
   }
   const url = new URL(path, base);
@@ -113,4 +115,20 @@ export async function trading(fetcher: Fetcher, keys: AlpacaKeys, method: Tradin
 /** One read on the market data API (always GET). */
 export async function marketData(fetcher: Fetcher, keys: AlpacaKeys, path: string): Promise<unknown> {
   return call(fetcher, dataUrl(path), keys, "GET");
+}
+
+/**
+ * Market data passed through untouched (no JSON parsing: a 60-day request is
+ * hundreds of kB and the free plan has 10 ms of CPU). GET only, data host
+ * only, redirects refused.
+ */
+export async function marketDataRaw(fetcher: Fetcher, keys: AlpacaKeys, path: string): Promise<Response> {
+  const url = dataUrl(path);
+  const res = await fetcher(url, {
+    method: "GET",
+    headers: { "APCA-API-KEY-ID": keys.keyId, "APCA-API-SECRET-KEY": keys.secretKey, Accept: "application/json" },
+    redirect: "manual",
+  });
+  if (res.status >= 300 && res.status < 400) throw new PaperLockError("refused redirect from " + url.origin);
+  return res;
 }

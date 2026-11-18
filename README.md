@@ -68,6 +68,19 @@ python3 scripts/check_paper_lock.py && python3 scripts/skill_integrity.py verify
 python3 scripts/run_skill_tests.py
 ```
 
+## Passages de Claude (jalon 4)
+
+Quatre tâches planifiées lisent `ops/passes/<passage>.md` et lancent `python3 ops/pile.py …`. Claude ne passe aucun ordre et n'a aucune clé Alpaca : il envoie des **plans** au veilleur.
+
+- **9 h 15 NY, avant-ouverture** : scan de tout le marché et news, puis Claude choisit jusqu'à 6 actions à surveiller.
+- **9 h 47 NY, cassures** : pour chaque action, plan adapté à l'indice de foule, Time Machine (10 000 rejeux, graine 19), filtre strict (verdict « Leans/Strongly toward the target » **et** R moyen positif après glissement, sur les rejeux comme sur l'historique), taille et `trader-risk` (`PASS`). Claude arme au plus 3 trades et écrit le pourquoi. Le fantôme (skill brut) est armé à côté.
+- **12 h 00 NY, mi-séance** : news sur les plans armés, désarmement si besoin, nouveaux setups.
+- **16 h 15 NY, bilan** : résultat du jour face au S&P et au fantôme, une leçon.
+
+**Taille en fractions.** `trader-budget` ne dimensionne qu'en actions entières. Avec ~55 $, une action entière dépasse presque toujours 0,55 $ de risque. Pile calcule alors la fraction et écrit l'ordre au format de `trader-budget` ; `trader-risk` le juge tel quel (`PASS` + empreinte). Si au moins une action entière tient dans le risque, l'ordre est un bracket en actions entières.
+
+Le veilleur refait toutes les règles à la réception (deuxième ligne) et refuse tout plan qui en enfreint une, avec une alerte.
+
 ## Licences
 
 - `day-trader-skill` © Jake Schincariol, MIT (`.claude/skills/LICENSE-day-trader-skill`).

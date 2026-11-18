@@ -148,6 +148,43 @@ function Position({ state }: { state: State }) {
   );
 }
 
+const STATUS: Record<string, string> = { arme: "armé", declenche: "déclenché", execute: "en position", desarme: "désarmé", expire: "expiré" };
+const usd2 = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Today's real plans (brief 5.4): "aucun trade armé" is a normal day. */
+function Plans({ state }: { state: State }) {
+  const real = state.plans.filter((p) => p.kind === "reel");
+  if (!state.today_is_trading && real.length === 0) return null;
+  const cassuresAt = state.passes.find((p) => p.name === "cassures")?.at ?? null;
+  const before = cassuresAt !== null && state.now < cassuresAt + 10 * 60_000 && real.length === 0;
+  return (
+    <section class="section" aria-labelledby="h-plans">
+      <div class="section-head">
+        <h2 id="h-plans" class="label">
+          Plans du jour
+        </h2>
+      </div>
+      {real.length === 0 ? (
+        <p class="empty">{before ? "Claude arme les trades vers " + hhmm(cassuresAt ?? state.now) + ", après la fourchette d'ouverture." : "Aucun trade armé aujourd'hui : rien n'a passé le filtre strict de la Time Machine."}</p>
+      ) : (
+        <ul>
+          {real.map((p) => (
+            <li key={p.id} class="row">
+              <span class="row-main">
+                <span class="row-title">{p.symbol}</span>
+                <span class="row-sub">
+                  au-dessus de {usd2(p.level)} $ · stop {usd2(p.stop)} · objectif {usd2(p.target)}
+                </span>
+              </span>
+              <span class={"row-value " + (p.status === "desarme" || p.status === "expire" ? "muted" : "gain")}>{STATUS[p.status] ?? p.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function Dashboard({ live }: { live: Live }) {
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const s = live.state;
@@ -175,6 +212,8 @@ export function Dashboard({ live }: { live: Live }) {
       </figure>
 
       {s ? <Position state={s} /> : null}
+
+      {s ? <Plans state={s} /> : null}
 
       <section class="section" aria-labelledby="h-historique">
         <div class="section-head">

@@ -72,6 +72,7 @@ export function fakeMarket(opts: FakeOptions = {}): Deps & { calls: string[] } {
         .map((b) => ({ t: new Date(b.ts).toISOString(), o: b.c, h: b.c, l: b.c, c: b.c, v: 1200, n: 30, vw: b.c }));
       return reply({ bars: bars.length ? { SPY: bars } : {}, next_page_token: null });
     }
+    if (url.origin === "https://api.github.com") return reply({ stargazers_count: 412, forks_count: 57 });
     if (String(input).startsWith(FRANKFURTER)) {
       const rates: Record<string, { EUR: number }> = {};
       for (const [d, r] of Object.entries(o.fx)) rates[d] = { EUR: r };

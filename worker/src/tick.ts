@@ -10,7 +10,8 @@
  */
 import { AlpacaError, PaperLockError, trading, type AlpacaKeys, type Fetcher } from "./alpaca";
 import { getClock, type CachedClock } from "./clock";
-import type { Deps, Env } from "./env";
+import { fetchSkillPopularity } from "./crowd";
+import type { Deps, Env, FetchFn } from "./env";
 import { refreshRates, type FxRate } from "./fx";
 import { checkAccount } from "./guard";
 import { fetchBars, latestClose, resumeStart, saveBars } from "./market";
@@ -71,14 +72,20 @@ interface Preload {
   readonly day0: Day0 | null;
   readonly latestRate: FxRate | null;
   readonly lastSpy: { price: number; ts: number } | null;
+  readonly crowdFetched: string | null;
+  /** Passes reported today, and whether any pass was ever reported (the schedule is live). */
+  readonly passesToday: readonly string[];
+  readonly passesLive: boolean;
 }
 
-async function preload(db: D1Database, sessionStart: number): Promise<Preload> {
-  const [kv, cfg, fx, bar] = await db.batch([
-    db.prepare("SELECT key, value FROM kv_state WHERE key IN ('clock', 'fx_last_try', 'compacted')"),
+async function preload(db: D1Database, sessionStart: number, today: string): Promise<Preload> {
+  const [kv, cfg, fx, bar, passes, live] = await db.batch([
+    db.prepare("SELECT key, value FROM kv_state WHERE key IN ('clock', 'fx_last_try', 'compacted', 'crowd_fetched')"),
     db.prepare("SELECT value FROM config WHERE key = 'day0'"),
     db.prepare("SELECT date, eur_per_usd FROM fx_rates ORDER BY date DESC LIMIT 1"),
     db.prepare("SELECT ts, c FROM bars_1m WHERE symbol = ? AND ts >= ? ORDER BY ts DESC LIMIT 1").bind(BENCHMARK, sessionStart),
+    db.prepare("SELECT DISTINCT pass FROM passes WHERE date = ?").bind(today),
+    db.prepare("SELECT EXISTS (SELECT 1 FROM passes) AS live"),
   ]);
   const map = new Map<string, unknown>();
   for (const r of (kv?.results ?? []) as { key: string; value: string }[]) map.set(r.key, JSON.parse(r.value));
@@ -92,6 +99,9 @@ async function preload(db: D1Database, sessionStart: number): Promise<Preload> {
     day0: c ? (JSON.parse(c) as Day0) : null,
     latestRate: f ? { date: f.date, eurPerUsd: f.eur_per_usd } : null,
     lastSpy: b ? { price: b.c, ts: b.ts } : null,
+    crowdFetched: (map.get("crowd_fetched") as string | undefined) ?? null,
+    passesToday: ((passes?.results ?? []) as { pass: string }[]).map((r) => r.pass),
+    passesLive: ((live?.results?.[0] as { live: number } | undefined)?.live ?? 0) === 1,
   };
 }
 
@@ -135,10 +145,12 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
 
   try {
     const sessionStart = zonedToUtc(ny.date, "09:30", NY);
-    const pre = await preload(db, sessionStart);
+    const pre = await preload(db, sessionStart, ny.date);
     const { clock, save } = await getClock(db, fetcher, keys, now, pre.clock);
     if (save) statements.push(save);
     if (save && clock.isOpen) statements.push(kvPut(db, "last_open_date", ny.date, now));
+    await dailyCrowd(db, fetchFn, now, ny.date, pre.crowdFetched, statements);
+    if (clock.isOpen && pre.passesLive) missingPasses(db, now, ny.date, ny.minutes, pre.passesToday, statements);
     if (!clock.isOpen) {
       compactOnceADay(db, now, ny.date, ny.minutes, pre.compacted, statements);
       return finish("market_closed");
@@ -241,6 +253,35 @@ export async function tick(env: Env, scheduledTime: number, deps: Deps): Promise
       alert(db, now, lock || auth ? "critical" : "warn", "veilleur", code, errorText(e), code + ":" + ny.date + ":" + (lock || auth ? "" : ny.hour)),
     );
     return finish("error", code);
+  }
+}
+
+/** Once a day: the skill's GitHub stars and forks (crowd index). Never blocks the minute. */
+async function dailyCrowd(db: D1Database, fetchFn: FetchFn, now: number, date: string, done: string | null, statements: D1PreparedStatement[]): Promise<void> {
+  if (done === date) return;
+  statements.push(kvPut(db, "crowd_fetched", date, now));
+  try {
+    const { stars, forks } = await fetchSkillPopularity(fetchFn);
+    statements.push(
+      db.prepare("INSERT INTO crowd_daily (date, stars, forks, fetched_at) VALUES (?, ?, ?, ?) ON CONFLICT(date) DO UPDATE SET stars = excluded.stars, forks = excluded.forks, fetched_at = excluded.fetched_at").bind(date, stars, forks, now),
+    );
+  } catch (e) {
+    statements.push(alert(db, now, "info", "veilleur", "crowd_github", "Popularité du skill illisible aujourd'hui : " + errorText(e), "crowd_github:" + date));
+  }
+}
+
+/** Passes the watcher can see from its window (9:25–16:10 NY): alert 20 min after a pass that did not report. */
+const WATCHED_PASSES = [
+  { name: "avant-ouverture", due: 9 * 60 + 35 },
+  { name: "cassures", due: 10 * 60 + 7 },
+  { name: "mi-seance", due: 12 * 60 + 20 },
+] as const;
+
+function missingPasses(db: D1Database, now: number, date: string, minutes: number, seen: readonly string[], statements: D1PreparedStatement[]): void {
+  for (const p of WATCHED_PASSES) {
+    if (minutes >= p.due && !seen.includes(p.name)) {
+      statements.push(alert(db, now, "critical", "veilleur", "pass_missing", "Le passage « " + p.name + " » de Claude n'a pas donné signe de vie : aucun plan nouveau ne viendra de lui.", "pass_missing:" + p.name + ":" + date));
+    }
   }
 }
 

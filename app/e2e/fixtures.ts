@@ -31,7 +31,8 @@ export function state(over: Record<string, unknown> = {}) {
     money: { as_of: NOW, usd, cash_usd: usd, eur: Math.round(usd * 0.91 * 100) / 100, base_eur: 50, delta_eur: Math.round((usd * 0.91 - 50) * 100) / 100, delta_pct: Math.round(((usd * 0.91 - 50) / 50) * 1000) / 10, fx: { eur_per_usd: 0.91, date: "2026-11-17" } },
     day0: { date: "2026-11-17", usd: 55, eur_per_usd: 0.91, fx_date: "2026-11-17" },
     positions: [],
-    plans: [],
+    plans: [] as unknown[],
+    today_is_trading: true,
     limits: { equity_usd: usd, max_loss_trade_usd: 0.55, max_daily_loss_usd: 1.65, max_trades: 3, max_position_usd: 41.25, cash_buffer_usd: 5.5 },
     passes: [
       { name: "avant-ouverture", at: Date.UTC(2026, 10, 17, 14, 15) },

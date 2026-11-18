@@ -55,8 +55,8 @@ describe("in the window", () => {
     const m = fakeMarket({ spyCloses: { [minute - 120_000]: 670.1, [minute - 60_000]: 671.25 } });
     const r = await tick(KEYED, minute, m);
     expect(r.status).toBe("recorded");
-    // clock, account, ECB rates, positions, bars
-    expect(r.subrequests).toBe(5);
+    // clock, GitHub (once a day), account, ECB rates, positions, bars
+    expect(r.subrequests).toBe(6);
 
     const day0 = await configGet<Day0>(env.DB, "day0");
     expect(day0).toMatchObject({ date: "2026-11-17", equityUsd: 55.07, eurPerUsd: 0.90794, fxDate: "2026-11-16", baseEur: 50, spyPrice: 671.25 });
@@ -146,8 +146,8 @@ describe("failure is never silent", () => {
       get(target, prop, receiver) {
         if (prop === "batch") {
           return (stmts: D1PreparedStatement[]) => {
-            // Fail the minute's write batch (the read batch has 4 statements).
-            if (stmts.length > 4 && ++calls === 1) return Promise.reject(new Error("D1_ERROR: simulated"));
+            // Fail the minute's write batch (the first batch is the minute's read).
+            if (++calls === 2) return Promise.reject(new Error("D1_ERROR: simulated"));
             return target.batch(stmts);
           };
         }

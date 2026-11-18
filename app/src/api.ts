@@ -41,6 +41,9 @@ export interface State {
     cash_buffer_usd: number;
   } | null;
   readonly passes: readonly { name: string; at: number }[];
+  readonly today_is_trading?: boolean;
+  readonly plans: readonly PlanSummary[];
+  readonly last_bilan_date?: string | null;
   readonly next_pass: { name: string; at: number } | null;
   readonly crowd: { score: number } | null;
   readonly alerts_open: number;
@@ -51,6 +54,18 @@ export interface State {
     data: Health | null;
     fx: (Health & { rate_date: string | null }) | null;
   };
+}
+
+export interface PlanSummary {
+  readonly id: string;
+  readonly kind: "reel" | "fantome";
+  readonly symbol: string;
+  readonly status: "arme" | "desarme" | "declenche" | "execute" | "expire";
+  readonly level: number;
+  readonly stop: number;
+  readonly target: number;
+  readonly why: string;
+  readonly verdict: string | null;
 }
 
 export type Range = "1j" | "1s" | "1m" | "tout";
@@ -136,6 +151,7 @@ export const api = {
   kill: () => call<{ paused: true; guard: string; cancelled_orders: number; closed_positions: number; errors: string[] }>("POST", "/api/kill"),
   pair: (code: string, name: string) => call<{ token: string }>("POST", "/api/pair", { code, name }),
   pairCode: () => call<{ code: string; expires_at: number }>("POST", "/api/pair/code"),
+  claudeToken: () => call<{ token: string; device_id: string }>("POST", "/api/tokens", { scope: "claude", name: "Passages de Claude" }),
 };
 
 /** Last good answers, kept for offline display with their time. */

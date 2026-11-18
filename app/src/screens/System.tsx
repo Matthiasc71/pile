@@ -218,6 +218,54 @@ function Pairing() {
   );
 }
 
+function ClaudeToken() {
+  const [token, setToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const make = async () => {
+    setErr(null);
+    try {
+      setToken((await api.claudeToken()).token);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "erreur");
+    }
+  };
+  const copy = async () => {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopied(true);
+    } catch {
+      setErr("Copie impossible : sélectionne le jeton à la main.");
+    }
+  };
+  return (
+    <Section title="Jeton de Claude">
+      {token ? (
+        <>
+          <p class="token" aria-label="Jeton de Claude">
+            {token}
+          </p>
+          <div class="controls">
+            <button type="button" class="wide-btn" onClick={copy}>
+              {copied ? "Copié" : "Copier le jeton"}
+            </button>
+          </div>
+          <p class="note">Affiché une seule fois. Colle-le uniquement dans le formulaire sécurisé que Claude t'ouvre, jamais dans la conversation. Il ne permet que de lire l'état et d'envoyer des plans : pas de pause, pas de coupure, pas d'ordre.</p>
+        </>
+      ) : (
+        <>
+          <button type="button" class="wide-btn" onClick={make}>
+            Créer le jeton de Claude
+          </button>
+          <p class="note">Pour les 4 passages planifiés. Un nouveau jeton n'annule pas l'ancien : révoque-le si besoin.</p>
+        </>
+      )}
+      {err ? <p class="error">{err}</p> : null}
+    </Section>
+  );
+}
+
 function Honesty() {
   return (
     <Section title="À garder en tête">
@@ -252,6 +300,7 @@ export function System({ live }: { live: Live }) {
       )}
       <Notifications />
       <Pairing />
+      <ClaudeToken />
       <Honesty />
     </main>
   );

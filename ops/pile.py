@@ -368,20 +368,28 @@ def cmd_bilan(a):
     first, last = (pts[0], pts[-1]) if pts else (None, None)
     plans = p.plans(date).get("plans", [])
     j = p.journal(date).get("entries", [])
+    def ends(key):
+        vals = [x[key] for x in series.get("points", []) if x.get(key) is not None]
+        return {"debut": vals[0] if vals else None, "fin": vals[-1] if vals else None}
+
     d = {
         "date": date,
-        "toi": {"debut": first and first["toi"], "fin": last and last["toi"]},
-        "sp": {"debut": first and first.get("sp"), "fin": last and last.get("sp")},
-        "fantome": {"debut": first and first.get("fantome"), "fin": last and last.get("fantome")},
+        "toi": ends("toi"),
+        "sp": ends("sp"),
+        "fantome": ends("fantome"),
         "argent": s.get("money"),
         "plans": plans,
         "journal": [{"pass": e["pass"], "kind": e["kind"], "title": e.get("title"), "body": e["body"]} for e in j],
         "trades": [],  # trades arrive with milestone 5
     }
     write("bilan", d)
+    def line(name, e):
+        if e["debut"] is None:
+            return "%s : pas encore de données" % name
+        return "%s : %.2f € → %.2f € (%+.2f €)" % (name, e["debut"], e["fin"], e["fin"] - e["debut"])
+
     if first:
-        say("Toi : %.2f € → %.2f € (%+.2f €) · S&P : %s → %s · fantôme : %s" % (
-            first["toi"], last["toi"], last["toi"] - first["toi"], first.get("sp"), last.get("sp"), last.get("fantome") or "pas encore simulé"))
+        say(" · ".join(line(n, d[k]) for n, k in (("Toi", "toi"), ("S&P", "sp"), ("Fantôme", "fantome"))))
     m = s.get("money") or {}
     say("Depuis le départ : %.2f € (%+.2f € face aux 50 €)." % (m.get("eur", 0), m.get("delta_eur", 0)))
     say("Plans du jour : %s" % (", ".join("%s %s (%s)" % (x["kind"], x["symbol"], x["status"]) for x in plans) or "aucun"))

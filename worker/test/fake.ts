@@ -60,7 +60,9 @@ export function fakeMarket(opts: FakeOptions = {}): Deps & { calls: string[] } {
         return reply({ timestamp: new Date().toISOString(), is_open: o.isOpen, next_open: new Date(o.isOpen ? T.nextOpen : T.open).toISOString(), next_close: new Date(T.close).toISOString() });
       }
       if (url.pathname === "/v2/account") return o.accountStatus === 200 ? reply(o.account) : reply({ message: "forbidden" }, o.accountStatus);
+      if (url.pathname === "/v2/positions" && init?.method === "DELETE") return reply(o.positions.map(() => ({ status: 200 })), 207);
       if (url.pathname === "/v2/positions") return reply(o.positions);
+      if (url.pathname === "/v2/orders" && init?.method === "DELETE") return reply([{ id: "o1", status: 200 }], 207);
     }
     if (url.origin === DATA_BASE && url.pathname === "/v2/stocks/bars") {
       const start = Date.parse(url.searchParams.get("start") ?? "");

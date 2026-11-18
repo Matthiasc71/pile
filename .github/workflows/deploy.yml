@@ -53,6 +53,9 @@ jobs:
       - name: Verrou paper (encore, juste avant de déployer)
         if: steps.gate.outputs.go == 'true'
         run: python3 scripts/check_paper_lock.py
+      - name: Build de l'app
+        if: steps.gate.outputs.go == 'true'
+        run: npm run build
       - name: Base D1
         if: steps.gate.outputs.go == 'true'
         run: node scripts/ci_d1.mjs

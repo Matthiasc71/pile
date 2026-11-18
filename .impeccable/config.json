@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "app/src/styles.css"
+        ],
+        "createdAt": "2026-11-18T08:07:58.756Z",
+        "reason": "Brief §9.1: phosphor halo on PILE and the main figure is the chosen Oscilloscope direction (mockups)"
+      }
+    ]
+  }
+}

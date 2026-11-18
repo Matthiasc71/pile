@@ -29,22 +29,38 @@ export async function readPause(db: D1Database, now: number): Promise<Pause> {
   return p;
 }
 
-/** Next scheduled pass from the cached clock. Null before the first clock read. */
-export function nextPass(clock: CachedClock | null, lastOpenDate: string | null, now: number): { name: string; at: number } | null {
-  if (!clock) return null;
+/**
+ * The four passes of the relevant trading day: today while a pass is still
+ * ahead (or the session is on), otherwise the next trading day.
+ */
+export function passDay(clock: CachedClock | null, lastOpenDate: string | null, now: number): { name: string; at: number }[] {
+  if (!clock) return [];
   const today = zoned(now, NY).date;
   const nextOpenDate = zoned(clock.nextOpen, NY).date;
   const todayIsTrading = clock.isOpen || lastOpenDate === today || nextOpenDate === today;
+  const list = (day: string) => PASSES.map((p) => ({ name: p.name, at: zonedToUtc(day, p.at, NY) }));
   if (todayIsTrading) {
-    for (const p of PASSES) {
-      const at = zonedToUtc(today, p.at, NY);
-      if (at > now) return { name: p.name, at };
-    }
+    const todays = list(today);
+    if (todays.some((p) => p.at > now)) return todays;
   }
-  const day = nextOpenDate > today ? nextOpenDate : null;
-  if (!day) return null;
-  const first = PASSES[0];
-  return { name: first.name, at: zonedToUtc(day, first.at, NY) };
+  return nextOpenDate > today ? list(nextOpenDate) : [];
+}
+
+/** Next scheduled pass from the cached clock. Null before the first clock read. */
+export function nextPass(clock: CachedClock | null, lastOpenDate: string | null, now: number): { name: string; at: number } | null {
+  return passDay(clock, lastOpenDate, now).find((p) => p.at > now) ?? null;
+}
+
+/** The skill's recommended rules scaled to the account (section 5.3): 1 % per trade, 3 % per day, 3 trades. */
+export function limitsFor(equityUsd: number): Record<string, number> {
+  return {
+    equity_usd: round(equityUsd, 2),
+    max_loss_trade_usd: round(equityUsd * 0.01, 2),
+    max_daily_loss_usd: round(equityUsd * 0.03, 2),
+    max_trades: 3,
+    max_position_usd: round(equityUsd * 0.75, 2),
+    cash_buffer_usd: round(equityUsd * 0.1, 2),
+  };
 }
 
 interface Health {
@@ -96,6 +112,8 @@ export async function buildState(db: D1Database, now: number): Promise<unknown> 
     positions: positions?.items ?? [],
     positions_as_of: positions?.at ?? null,
     plans: [],
+    limits: equity ? limitsFor(equity.equity_usd) : null,
+    passes: passDay(clock, lastOpenDate, now),
     next_pass: nextPass(clock, lastOpenDate, now),
     crowd: null,
     alerts_open: alertsOpen?.n ?? 0,

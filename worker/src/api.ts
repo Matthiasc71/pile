@@ -9,6 +9,8 @@
  * | GET  /api/series?range=       | app          |
  * | GET  /api/alerts              | app          |
  * | POST /api/pause               | app          |
+ * | POST /api/kill                | app          |
+ * | GET  /api/trades              | app          |
  * | POST /api/pair                | none         |
  * | POST /api/pair/code           | app          |
  * | POST /api/tokens              | app          |
@@ -17,7 +19,8 @@
  */
 import * as z from "zod/mini";
 import { AuthError, authenticate, createPairCode, issueToken, pair, type Device, type Scope } from "./auth";
-import type { Env } from "./env";
+import { defaultDeps, type Deps, type Env } from "./env";
+import { killAll } from "./kill";
 import { RANGES, buildSeries, type Range } from "./series";
 import { buildState, readPause } from "./state";
 import { kvPut } from "./store";
@@ -64,7 +67,7 @@ const PairBody = z.object({ code: z.string().check(z.minLength(1), z.maxLength(2
 const PauseBody = z.object({ active: z.boolean() });
 const TokenBody = z.object({ scope: z.enum(["app", "claude"]), name: z.string().check(z.minLength(1), z.maxLength(60)) });
 
-export async function handleApi(request: Request, env: Env, now: number): Promise<Response> {
+export async function handleApi(request: Request, env: Env, now: number, deps: Deps = defaultDeps): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "");
   const method = request.method;
@@ -96,6 +99,15 @@ export async function handleApi(request: Request, env: Env, now: number): Promis
       const pause = body.active ? { active: true, reason: "manuel (" + device.name + ")", since: now, until: null } : { active: false, reason: null, since: null, until: null };
       await kvPut(db, "pause", pause, now).run();
       return json(200, { paused: await readPause(db, now) });
+    }
+    if (path === "/api/kill" && method === "POST") {
+      const device = await auth(["app"]);
+      return json(200, await killAll(env, deps, now, device.name));
+    }
+    if (path === "/api/trades" && method === "GET") {
+      await auth(["app"]);
+      // Trades arrive with milestone 5 (paper execution).
+      return json(200, { trades: [], next: null });
     }
     if (path === "/api/pair" && method === "POST") {
       const body = await readBody(request, PairBody);

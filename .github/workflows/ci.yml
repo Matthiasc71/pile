@@ -65,8 +65,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - name: Build de l'app (le Worker la sert comme assets)
+        run: npm run build
       - run: npm run typecheck
       - run: npm test
+
+  e2e:
+    name: App (Playwright, PWA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: app
+      - name: Parcours, PWA, hors ligne, mouvement réduit
+        run: npm run e2e
+        working-directory: app
 
   design:
     name: Impeccable detect
@@ -78,8 +98,4 @@ jobs:
           node-version: 22
       - name: Zéro anti-pattern dans app/src
         run: |
-          if [ -d app/src ]; then
-            npx -y impeccable@4.9.2 detect --github app/src
-          else
-            echo "app/src n'existe pas encore (jalon 3)."
-          fi
+          npx -y impeccable@4.9.2 detect --github app/src

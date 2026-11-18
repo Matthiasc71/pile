@@ -138,3 +138,39 @@ describe("state and series", () => {
     expect((await call("GET", "/api/series?range=2j", { token: app })).status).toBe(400);
   });
 });
+
+describe("tout couper", () => {
+  const keyed = () => ({ ...env, ALPACA_KEY_ID: "k", ALPACA_SECRET_KEY: "s" });
+  async function kill(market: ReturnType<typeof fakeMarket>) {
+    const app = (await issueToken(env, "app", "iPhone", NOW)).token;
+    const req = new Request("https://pile.example.workers.dev/api/kill", { method: "POST", headers: { Authorization: "Bearer " + app } });
+    const res = await handleApi(req, keyed(), NOW, market);
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  it("pauses, cancels orders, then closes positions", async () => {
+    const m = fakeMarket({ positions: [{ symbol: "AMD", qty: "0.2", side: "long", avg_entry_price: "1", market_value: "1", current_price: "1", unrealized_pl: "0", unrealized_plpc: "0" }] });
+    const r = await kill(m);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ paused: true, guard: "ok", cancelled_orders: 1, closed_positions: 1, errors: [] });
+    expect(m.calls.filter((c) => c.includes("/v2/orders") || c.includes("/v2/positions"))).toEqual([
+      "https://paper-api.alpaca.markets/v2/orders",
+      "https://paper-api.alpaca.markets/v2/positions",
+    ]);
+    const pause = await env.DB.prepare("SELECT value FROM kv_state WHERE key = 'pause'").first<{ value: string }>();
+    expect(JSON.parse(pause?.value ?? "{}")).toMatchObject({ active: true });
+  });
+
+  it("touches nothing on an account the guard refuses, but still pauses", async () => {
+    const m = fakeMarket({ account: { ...(await import("./fake")).paperAccount(), equity: "90000" } });
+    const r = await kill(m);
+    expect(r.body).toMatchObject({ paused: true, guard: "equity_too_high", cancelled_orders: 0, closed_positions: 0 });
+    expect(m.calls.some((c) => c.endsWith("/v2/orders") || c.endsWith("/v2/positions"))).toBe(false);
+  });
+
+  it("is app scope only", async () => {
+    const claude = (await issueToken(env, "claude", "passes", NOW)).token;
+    const res = await handleApi(new Request("https://x/api/kill", { method: "POST", headers: { Authorization: "Bearer " + claude } }), keyed(), NOW, fakeMarket());
+    expect(res.status).toBe(403);
+  });
+});

@@ -21,3 +21,7 @@ __pycache__/
 playwright-report/
 test-results/
 .DS_Store
+
+# Playwright
+test-results/
+playwright-report/
